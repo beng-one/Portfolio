@@ -1,0 +1,644 @@
+---
+title: "Heart Failure Prevision"
+author: "Lajoie BENGONE AKOU & Jean-Luc AYIVOR "
+output:
+  bookdown::html_document2:
+    theme: cerulean
+    highlight: tango
+    toc: true 
+    toc_depth: 2
+    toc_float:
+      coolapsed: false
+      smooth_scroll: true
+      
+date: "`r Sys.Date()`"
+---
+
+
+# PRESENTATON DE LA BASE DE DONNEES
+
+La base de données [**Heart Failure Clinical Records**](https://archive.ics.uci.edu/dataset/519/heart+failure+clinical+records) contient les dossiers médicaux de 299 patients atteints d'insuffisance cardiaque, recueillis pendant leur période de suivi, chaque profil de patient comportant 13 caractéristiques cliniques qui se présentent comme suit :
+
+* age : age of the patient (year)
+* anaemia :  decrease of red blood cells or hemoglobin (.)
+* creatinine_phosphokinase : level of the CPK enzyme in the blood	(mcg/L)
+* diabetes : if the patient has diabetes (.)
+* ejection_fraction : percentage of blood leaving the heart at each contraction (%)
+* high_blood_pressure : if the patient has hypertension (.)
+* platelets : platelets in the blood (kiloplatelets/mL)
+* serum_creatinine : level of serum creatinine in the blood (mg/dL)
+* serum_sodium : level of serum sodium in the blood (mEq/L)
+* sex : Sex	woman or man (.)
+* smoking :if the patient smokes or not (.)
+* time :follow-up period (days)
+* DEAHT_EVENT : if the patient died during the follow-up period (.)
+
+
+# OBJECTIF
+
+L'objectif de cette étude est de prédire si un patient atteint d'insuffissance cardiaque va décéder pendant la période de suivi ou pas selon le niveau de sévérité de ses caractéristiques médicales. [source](http://heart.org/en/health-topics/heart-failure/what-is-heart-failure/classes-of-heart-failure#:~:text=Heart%20failure%20can%20progress.,how%20bad%20the%20symptoms%20are)
+
+# ORGANISATION DU REPERTOIRE DE TRAVAIL
+
+## Définition du répertoire de travail
+
+```{r}
+# Chargement du répertoire de travail 
+setwd("C:/Users/lajoi/Documents/0_PARCOURS UNIVERSITAIRE/3_MASTER_2024_2026/UPEC - M2 - S1 - MASERATI DA/Scoring/Score project")
+```
+
+## Création des dossiers pour les inputs et outputs
+
+```{r}
+
+data_input_url <- "data_input"
+data_input <- ifelse(dir.exists(data_input_url)==TRUE, print("Le dossier existe déjà"), dir.create(data_input_url))
+   
+data_output_url <- "data_output"
+data_output <- ifelse(dir.exists(data_output_url)==TRUE, print("Le dossier existe déjà"), dir.create(data_output_url))
+
+```
+
+# INSTALLATION ET CHARGEMENT DES PACKAGES AVEC PACMAN
+
+## Installation du package avec pacman
+
+```{r}
+#install.packages("pacman", repos = "http://cran.us.r-project.org") # install.packages("pacman") 
+```
+
+## Chargement du package avec la méthode pacman
+
+```{r}
+library(pacman)
+```
+  
+### Chargement des librairies
+
+```{r}
+p_load("tidyverse", 
+       "ggplot2", 
+       "stargazer", 
+       "cluster", 
+       "factoextra", 
+       "dendextend", 
+       "clue", 
+       "caret", 
+       "flexclust", 
+       "MASS",
+       "caret",
+       "candisc",
+       "klaR",
+       "class",
+       "pROC",
+       "rpart",
+       "rpart.plot",
+       "tree")
+```
+
+
+# CHARGEMENT DE LA BASE DE DONNES
+
+```{r}
+HeartFailure <- read.csv("Data_input/heart_failure_clinical_records_dataset.csv", sep = ",")
+HeartFailure |> head(5)
+```
+
+# ANALYSE DESCRIPTIVE
+
+## Tableau de statistiques descriptives
+
+```{r}
+stargazer(HeartFailure, type = "text", out = "Data_output/tab1_stats.txt")
+```
+### Commentaire :
+
+La base de données contient 299 observations.
+Il est important de souligner qu'il n'y a 0 valeur manquante.
+Les variables sont toutes numériques (continue, discrète ou binaire).
+Les variances sont très différentes d'une variables à l'autre. 
+
+On remarque que l'étude porte sur des patients agés de 40 à 95 ans ce qui semble logique car les insuffisances cardiaques atteigent plus les personnes agées. Dans notre cas, la plupart des patients ont environ 61 ans.
+
+Plus de la moitié des patients ne sont pas anémiés (170 contre 129 patient anémiés).
+41.8% des patients déclarent avoir le diabète et ceux souffrant d'hypertension représentent environ 35%.
+
+La plupart des patient ont déclaré qu'à chaque contraction, environ 38% de sang quittent leurs coeurs.
+
+Les femmes sont les plus représentées (65%). 32% des patients fumaient encore et 32% sont morts au cours de la période de suivi.
+
+On remarque également qu'il y'a une disproportionnalité des valeurs des variables, ce qui pourraît influencer nos résultats des méthodes de scoring qui seront appliquées
+
+
+## Nuages de points
+
+```{r}
+# Tranformation tibble
+HeartFailure_tibble <- as_tibble(HeartFailure)
+
+# Sélection des variables à comparer
+vars <- c("platelets", "age", "serum_creatinine", "serum_sodium", "creatinine_phosphokinase", "ejection_fraction")
+
+# Transformation en format tidy pour pourvoir juxtaposer les nuages de points
+HeartFailure_long <- HeartFailure_tibble %>%
+  dplyr::select(all_of(vars), time, DEATH_EVENT) %>%
+  pivot_longer(cols = all_of(vars), names_to = "Variable", values_to = "Valeur")
+
+# Nuages de points juxtaposés
+ggplot(HeartFailure_long, aes(x = Valeur, y = time, color = factor(DEATH_EVENT))) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ Variable, scales = "free_x") +  # un nuage pour chaque variable
+  labs(x = "Valeur", y = "période de suivi", color = "Death Event") +
+  theme_minimal()
+
+# ggsave("data_output/im1_scatterplots.png")
+
+```
+### Commentaire :
+
+Sur tous les panneaux, l’axe vertical correspond à la période de suivi (time). Les points bleus (patients décédés) sont très majoritairement concentrés en bas du graphique, alors que les points rouges (survivants) s’étendent beaucoup plus vers le haut.
+
+## Matrice de correlation
+
+```{r}
+# sauvegarder de l'image
+#png("data_output/im2_matrix_correlation.png")
+
+# matrice de correlation
+heatmap(cor(HeartFailure, method = "pearson", use = "complete.obs"))
+#dev.off()
+```
+
+# PREPARATION DE LA BASE DE DONNEES :
+
+```{r}
+# Critère de séparation : Méthode train test split
+set.seed(123)
+idx_train <- sample(nrow(HeartFailure), size = floor(0.7 * nrow(HeartFailure)))
+
+# Base d'entrainement
+HeartFailure_Train <- HeartFailure[idx_train, ]
+HeartFailure_Train_labels <- HeartFailure_Train$DEATH_EVENT
+HeartFailure_Train_no_death <- subset(HeartFailure_Train, select=-DEATH_EVENT)
+HeartFailure_Train |> head(5)
+
+# Base test
+HeartFailure_Test <- HeartFailure[-idx_train, ]
+HeartFailure_Test_labels <- HeartFailure_Test$DEATH_EVENT
+HeartFailure_Test_no_death <- subset(HeartFailure_Test, select=-DEATH_EVENT)
+HeartFailure_Test |> head(5)
+
+```
+## Affichage des modalités 
+```{r}
+
+table(HeartFailure_Train_labels)
+cat("\n")
+table(HeartFailure_Test_labels)
+```
+
+# CLASSIFICATION ASCENDANTE HIERARCHIQUE 
+
+## Standardisation des données
+
+```{r}
+col_scale <- c("age","creatinine_phosphokinase","ejection_fraction","platelets","serum_creatinine","serum_sodium","time")
+
+# Création des variables standardisées
+HeartFailure_Train_no_death_Scaled <- HeartFailure_Train_no_death
+
+HeartFailure_Train_no_death_Scaled[col_scale] <- scale(HeartFailure_Train_no_death_Scaled[col_scale], center =TRUE, scale = TRUE)
+
+HeartFailure_Train_no_death_Scaled |> head(5)
+
+# Création du fichier données finales
+#write.csv(HeartFailure_Train_no_death_Scaled_df, file = #"data_ouput/df3_HeartFailure_Train_no_death_Scaled_df.csv", row.names = FALSE)
+
+```
+
+## Vérification des données standardisées
+
+```{r}
+stargazer(HeartFailure_Train_no_death_Scaled, type = "text")
+```
+On remarque bien que les moyennes et les écart-types sont respectivement aux alentours de 0 et de 
+
+## CLASSIFICATION ASCENDANTE HIERARCHIQUE : Critère Linkage Complete
+
+```{r}
+# sauvegarder de l'image
+#png("data_output/im3_dendo1.png")
+
+# Dissimilarity matrix
+d = dist(HeartFailure_Train_no_death_Scaled, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+
+fviz_dend(hc1, k = 2, cex = 0.6, k_colors = c("#00AFBB","#E7B800"),
+          color_labels_by_k = TRUE, ggtheme = theme_minimal())
+
+#dev.off()
+
+# # Plot the obtained dendrogram
+# plot(hc1, cex = 0.6, hang = -1)  # hang : pour mettre les étiquettes à partir de 0  
+
+# plot(hc1, cex = 0.6, hang = -1)  # hang : pour mettre les étiquettes à partir de 0  
+
+
+```
+Avec le nombre important de variable, on remarque qu'il est difficile de lire dendogram
+
+## CLASSIFICATION ASCENDANTE HIERARCHIQUE :  : distance de Ward
+
+```{r}
+# sauvegarder de l'image
+#png("data_output/im4_dendo2.png")
+
+# Classification Ascendante Hierarchique en utilisant le critère de Ward
+hc2 <- hclust(d, method = "ward.D2" )
+
+fviz_dend(hc2, k = 2, cex = 0.6, k_colors = c("#00AFBB","#E7B800"),
+          color_labels_by_k = TRUE, ggtheme = theme_minimal())
+
+# # Dendogramme
+# plot(hc2, cex = 0.6, hang = -1)
+# 
+# # Diviser le dendongramme en 2 groupes
+# sub_grp <- cutree(hc2, k = 2)
+# 
+# # Paramétrage
+# plot(hc2, cex = 0.6)
+# rect.hclust(hc2, k = 2, border = 2:3)
+
+#dev.off()
+
+# # Plot the obtained dendrogram
+# plot(hc2, cex = 0.6, hang = -1)
+# 
+# # We can cut the tree into 2 groups
+# sub_grp <- cutree(hc2, k = 2)
+# # 
+# plot(hc2, cex = 0.6)
+# rect.hclust(hc2, k = 2, border = 2:3)
+
+```
+Avec la distance de WARD, on arrive à mieux distinguer les groupes. On peut distinguer 2 à 3 groupes qui se forment.
+
+## Evaluation des résultats de la CAH 
+
+```{r}
+
+# Valeurs prédites : Clustering selon la cah
+cah_train_prediction <- cutree(hc2, 2) # coder en 1 et 2 
+
+# Création des variables labels true et labels predict
+HeartFailure_Train_no_death_Scaled$cluster_pred <- ifelse(cah_train_prediction==1,0,1)
+HeartFailure_Train_no_death_Scaled$cluster_true <- HeartFailure_Train_labels
+
+# Matrice de confusion cah
+confusion_matrix_cah <- table(HeartFailure_Train_no_death_Scaled$cluster_pred, HeartFailure_Train_no_death_Scaled$cluster_true)
+print(confusion_matrix_cah)
+
+# accuracy
+accuracy_cah <- sum(diag(confusion_matrix_cah)) / sum(confusion_matrix_cah)
+cat("accuracy in cah is : ", accuracy_cah)
+
+```
+Notre modèle arrive à classer 82 individus comme survivants et qui ont bien survécu. Cependant, il déclare 55 survivants qui en réalité sont décédés.
+
+Pour les non survivants, notre modèle catégorise 60 non survivants qui en réalité ont survécu et il arrive à classer 11 non survivants qui sont bien décédés.
+
+Ces résultats sont logiques car base contient beaucoup plus de survivants que d'individus décédés. Ainsi, notre modèle est mieux entraîner sur cette catégories d'individus, ce qui explique pourquoi il arrive à mieux catégoriser les survivant.
+
+En général, notre modèle arrive à être précis à 44,48%
+
+# METHODE DE KMEANS
+
+```{r}
+# Spécifier le nombre de clusters
+kMeans_ncluster <- 2
+
+# Appliquer l'algorithme K-Médian sur l'ensemble de données d'entraînement
+kMeans_result <- kmeans(HeartFailure_Train_no_death, centers = kMeans_ncluster, nstart = 57)
+kMeans_result
+
+```
+Ici, on fixe le nombre de cluster égal à 2 car on connaît d'avantage le nombre de classe existante.
+Le ratio between_SS / total_SS mesure la part de la variabilité totale expliquée par la le clustering. Une valeur élevée indique que les groupes obtenus sont bien séparés et captent une part importante de nos données.
+
+On remarque que le ratio between_SS / total_SS =  52.5 %. Ce qui implique que 52.5 % de la variabilité totale des données est expliquée par la séparation en deux clusters.
+
+Nous allons comparer ce ration en augmentant le nombre de cluster (k à 3)
+```{r}
+# Spécifier le nombre de clusters
+kMeans_ncluster <- 3
+
+# Appliquer l'algorithme K-Médian sur l'ensemble de données d'entraînement
+kMeans_result_k3 <- kmeans(HeartFailure_Train_no_death, centers = kMeans_ncluster, nstart = 57)
+kMeans_result_k3
+```
+Avec un k=3, on remarque que le ratio between_SS / total_SS passe de 52.5 % à  74.0 %, ce qui constitue une grande amélioration. Cependant, vu qu'on connaît déjà le nombre de classe (2 pour mort ou survi), nous allons retenir un k =2
+
+Pour confirmer le nombre de K utilisé, on va utiliser la méthode du coude
+
+## Méthode du Coude
+
+```{r}
+# Définir le nombre maximum de clusters à tester :10 c'est bien étant donné le nbr d'obsr que vous avons
+max_clusters <- 10
+
+# Stocker les valeurs de WCSS (Within-Cluster Sum of Squares) pour chaque nombre de clusters
+wcss_values <- numeric(max_clusters)
+
+# Calculer WCSS pour chaque nombre de clusters
+for (k in 1:max_clusters) {
+  kmeans_result_coude <- kmeans(HeartFailure_Train_no_death, centers = k)
+  wcss_values[k] <- kmeans_result_coude$tot.withinss
+}
+
+# Créer un graphique pour visualiser les valeurs de WCSS
+plot(1:max_clusters, wcss_values, type = "b", pch = 19, frame = FALSE, 
+     xlab = "Nombre de clusters", ylab = "WCSS")
+#ggsave("data_output/im5_CoudeGraph.png")
+
+```
+On remarque qu'il une déclinaison de la courbe en 2, ce qui confirme qu'on a effectivement 2 groupes.
+
+## Prévision et Evaluation kMeans
+
+```{r}
+#kMeans sur les données d'entrainement
+kmean_test_prediction <- cl_predict(kMeans_result, newdata = HeartFailure_Test_no_death)
+
+#Prédire les clusters pour les données de test
+kmean_test_prediction_recode <- ifelse(kmean_test_prediction==1,1,0)
+
+#Créer la matrice de confusion entre les clusters prédits et les vraies étiquettes
+confusion_matrix_kMeans <- table(kmean_test_prediction_recode, HeartFailure_Test_labels)
+print(confusion_matrix_kMeans)
+
+
+# Calculer la précision en utilisant la matrice de confusion
+accuracy_kMeans <- sum(diag(confusion_matrix_kMeans)) / sum(confusion_matrix_kMeans)
+cat("accuracy kMeans is : ", accuracy_kMeans)
+
+```
+Notre modèle arrive à classer 11 individus comme survivants et qui ont bien survécu. Cependant, il déclare 5 survivants qui en réalité sont décédés.
+
+Pour les non survivants, notre modèle catégorise 50 non survivants qui en réalité ont survécu et il arrive à classer 24 non survivants qui sont bien décédés.
+
+En général, notre modèle arrive à être précis à 38,89%
+
+# METHODE KNN
+
+```{r}
+knn_nb_cluster <- 2
+
+knn_result <- knn(HeartFailure_Train_no_death, HeartFailure_Test_no_death, HeartFailure_Train_labels, knn_nb_cluster)
+
+knn_result
+
+```
+
+## MATRICE DE CONFUSION : KNN ALGORITHM
+
+```{r}
+confusion_matrix_knn <- confusionMatrix(table(knn_result, HeartFailure_Test_labels))
+print(confusion_matrix_knn)
+
+#accuracy_knn <- sum(diag(confusion_matrix_knn)) / sum(confusion_matrix_knn)
+#cat("accuracy knn is : ", accuracy_knn)
+
+# Accuracy
+accuracy_knn  <- confusion_matrix_knn$overall["Accuracy"]
+cat("Accuracy KNN is :", accuracy_knn)
+```
+En général, notre modèle arrive à être précis à 55,56%, ce qui constitue une amélioration par rapport au modèle précédent.
+
+# ANALYSE DISCRIMINANTE LINEAIRE
+
+```{r}
+lda_model <- lda(DEATH_EVENT ~., data = HeartFailure_Train)
+lda_model
+```
+Dans le train data, environ 68 % des patients ne décèdent pas contre 32 % qui décèdent.
+Les patients décédés (DEATH_EVENT = 1) :
+  - sont en moyenne plus âgés (65 contre 58) : Normal car les plus agés ont un organisme plus fragile;
+  - ont en moyenne une fraction d’éjection plus faible (33 contre 40);
+  - en moyenne créatinine beaucoup plus élevée (1.96 contre 1.19);
+  - en moyenne un temps de suivi beaucoup plus court (63 contre 159) : Normal car ils sont décédés bien avant.
+
+L’analyse discriminante sépare principalement les patients en deux groupe, ce qui justifie le fait d'avoir un seul LD.
+
+## Evaluation : Analyse Discriminante Linéaire
+
+```{r}
+# déploiement du modèle d'analyse discriminante
+lda_test_prediction <- predict(lda_model, newdata = HeartFailure_Test)
+lda_test_prediction
+
+# Matrice de confusion
+confusion_matrix_lda <- confusionMatrix(table(lda_test_prediction$class, HeartFailure_Test_labels))
+print(confusion_matrix_lda)
+
+# Accuracy
+accuracy_lda  <- confusion_matrix_lda$overall["Accuracy"]
+cat("Accuracy LDA is :", accuracy_lda)
+```
+En général, notre modèle arrive à être précis à 76,67%, ce qui constitue une amélioration par rapport au modèle précédent.
+
+## Courbe roc pour lda
+
+```{r}
+roc_lda <- roc(HeartFailure_Test_labels, as.numeric(lda_test_prediction$class))
+auc_lda_val <- auc(roc_lda)
+print(auc_lda_val)
+cat("\n")
+
+plot(roc_lda, col = "red", lwd = 2, main = "Courbe ROC - LDA")
+
+```
+On a un auc de 0.7103, ce qui implique que si on prend au hasard un patient décédé et un patient survivant, le modèle a environ 71 % de chances d’attribuer un score de risque plus élevé au patient décédé.
+
+# ARBRE DE DECISION
+
+```{r}
+cart_model <- rpart(DEATH_EVENT ~., data = HeartFailure_Train, method="class", parms=list(split="gini"))
+cart_model
+
+```
+
+```{r}
+#jpeg("Data_output/arbre_decision.jpg", width = 1200, height = 800, res = 150)
+rpart.plot(cart_model)
+#dev.off()
+```
+On commence par 100% de notre échantillon. La modalité la plus représentée est 0(survie) et la modalité 1(decès) représente 32% de l'échantillon.
+
+La 1er condition de split est la période de suivi>=74 jours. A droite on a ceux qui ne respectent pas la condition : environ 26% des patients ont été suivis moins de 74 jours, et dans ce groupe la probabilité estimée de décès est d’environ 84%.
+Les 74% de patients (respectant la 1ère condition de split), ont une probabilité de décès beaucoup plus faible (0.14%).
+
+La 2ème condition de split est la fraction d'éjection>=28%. Dans la branche gauche on a time >= 74 et ejection_fraction < 28 : environ 63% des patients ayant une période de suivi plus longue et avec un taux d'éjection >28% ont survécu.
+
+La 3ème condition de split porte sur le taux de créatinine dans le sang < 1.2mg/dL
+Branche gauche : time >= 74 avec ejection_fraction >= 28 et serum_creatinine < 1.2 : proba associée à la survie (0) = 0.20, représentant environ 5% des patients.
+
+Branche droite : time >= 74 avec ejection_fraction >= 28 et serum_creatinine ≥ 1.2 :
+classe 1 plus représentée avec proba de 0.69 pour 6% des patients. Ici, malgré une fraction d’éjection correcte (≥28%), une créatinine élevée est associée à un risque élevé de décès (environ 69%).
+
+## Elagage de l'arbre
+
+```{r}
+cart = rpart(DEATH_EVENT ~., data = HeartFailure_Train, method="class", parms=list(split="gini"),cp=0)
+printcp(cart)
+```
+En réalité, cet arbre commet un erreur de  67/209 = 0.32057 (taux d'erreur relatif)
+
+## choix valeur coefficient de pénalisation de la complexité pour élagage
+
+```{r}
+cart_model_3f = rpart(DEATH_EVENT ~., data = HeartFailure_Train, method="class", parms=list(split="gini"),control=list(minbucket=30,minsplit=30*2,maxdepth=3))
+rpart.plot(cart_model_3f)
+```
+Avec la complexité on arrive à 2 feuille qui correspond exactement au nombre de groupe de notre variable cible
+
+## Evaluation : Arbre de décision
+
+```{r}
+cart_test_prediction <- predict(cart_model, HeartFailure_Test, type="class")
+cart_test_prediction
+```
+
+```{r}
+# Matrice de confusion : CART algorithm
+confusion_matrix_cart <- confusionMatrix(table(cart_test_prediction, HeartFailure_Test_labels))
+print(confusion_matrix_cart)
+
+# Accuracy
+accuracy_cart  <- confusion_matrix_cart$overall["Accuracy"]
+cat("Accuracy CART is :", accuracy_cart)
+```
+En général, notre modèle arrive à être précis à 78,89%, ce qui constitue une amélioration par rapport au modèle précédent.
+
+## Courbe de ROC
+
+```{r}
+# Tracer la courbe ROC
+roc_curve_cart <- roc(cart_test_prediction, HeartFailure_Test_labels)
+auc_cart_val <- auc(roc_curve_cart)
+print(auc_cart_val)
+
+plot(roc_curve_cart, main = "Courbe ROC", col = "red", lwd = 2)
+```
+
+On a un auc de 0.7583, ce qui implique que si on prend au hasard un patient décédé et un patient survivant, le modèle a environ 76 % de chances d’attribuer un score de risque plus élevé au patient décédé.
+
+# RANDOM FOREST
+
+```{r}
+library(randomForest)
+random_forest_result <- randomForest(as.factor(DEATH_EVENT)~.,data=HeartFailure_Train,ntree=500)
+plot(random_forest_result)
+
+# Variables les plus importants/plus utilisées dans la ségmentation 
+
+varImpPlot(random_forest_result)
+```
+
+La forêt aléatoire nous montre les variables les plus important de notre modèle à savoir time, serum_creatine, ejection_fraction, age, platelets
+
+## Evaluation du RAMDON FOREST
+
+```{r}
+# Prédiction
+random_forest_test_prediction <- predict(random_forest_result,HeartFailure_Test,type="class")
+
+confusion_matrix_random_forest <- random_forest_result$confusion[,-3]
+confusion_matrix_random_forest
+#mean(Pima.tr$type!=pred.rf)
+
+# Accuracy
+accuracy_random_forest  <- sum(diag(confusion_matrix_random_forest)) / sum(confusion_matrix_random_forest)
+cat("Accuracy RANDOM FOREST is :", accuracy_random_forest)
+```
+Notre modèle arrive à classer 128 individus comme survivants et qui ont bien survécu. Cependant, il déclare 14 survivants qui en réalité sont décédés.
+
+Pour les non survivants, notre modèle catégorise 17 non survivants qui en réalité ont survécu et il arrive à classer 50 non survivants qui sont bien décédés.
+
+En général, notre modèle arrive à être précis à 85,16%
+
+## Courbe de ROC
+
+```{r}
+roc_curve_random_forest <- roc(as.numeric(random_forest_test_prediction), HeartFailure_Test_labels)
+auc_radom_forest_val <- auc(roc_curve_random_forest)
+print(auc_radom_forest_val)
+cat("\n")
+plot(roc_curve_random_forest, main = "Courbe ROC", col = "red", lwd = 2)
+```
+
+On a un auc de 0.8143, ce qui implique que si on prend au hasard un patient décédé et un patient survivant, le modèle a environ 81 % de chances d’attribuer un score de risque plus élevé au patient décédé.
+
+# SVM
+
+```{r}
+library(e1071)
+
+calibration_result <- tune.svm(DEATH_EVENT~.,data=HeartFailure_Train,gamma=seq(0.001,1,by=0.01))
+calibration_result
+```
+
+
+```{r}
+svm_result<- svm(as.factor(DEATH_EVENT)~.,data=HeartFailure_Train,gamma=calibration_result$best.parameters)
+svm_result
+```
+## Evaluation : SVM
+
+```{r}
+# Prédiction
+pred.svm <- predict(svm_result,HeartFailure_Test)
+pred.svm
+#mean(svm_result$DEA!=pred.svm)# Taux d'erreur de 0.2108434
+```
+
+```{r}
+# Matrice de confusion : CART algorithm
+confusion_matrix_svm <- confusionMatrix(table(pred.svm, HeartFailure_Test_labels))
+print(confusion_matrix_svm)
+
+# Accuracy
+accuracy_svm  <- confusion_matrix_cart$overall["Accuracy"]
+cat("Accuracy SVM is :", accuracy_svm)
+```
+Notre modèle arrive à classer 54 individus comme survivants et qui ont bien survécu. Cependant, il déclare 14 survivants qui en réalité sont décédés.
+
+Pour les non survivants, notre modèle catégorise 7 non survivants qui en réalité ont survécu et il arrive à classer 15 non survivants qui sont bien décédés.
+
+En général, notre modèle arrive à être précis à 78,89%
+
+## COurbe de roc
+```{r}
+roc_curve_svm <- roc(as.numeric(pred.svm), HeartFailure_Test_labels)
+auc_svm_val <- auc(roc_curve_svm)
+print(auc_svm_val)
+cat("\n")
+plot(roc_curve_svm, main = "Courbe ROC", col = "red", lwd = 2)
+```
+
+On a un auc de 0.738, ce qui implique que si on prend au hasard un patient décédé et un patient survivant, le modèle a environ 74 % de chances d’attribuer un score de risque plus élevé au patient décédé.
+
+# CONCLUSION
+
+```{r}
+list_scoring_model <- c("cah", "kmean", "knn", "lda", "cart", "random forest", "svm")
+list_scoring_accuracy <- c(accuracy_cah, accuracy_kMeans, accuracy_knn, accuracy_lda, accuracy_cart, accuracy_random_forest, accuracy_svm)
+
+table_scoring <- data.frame("modèle" = list_scoring_model, "accuracy" = list_scoring_accuracy)
+table_scoring
+
+```
+
+On peut conclure que le modèle Random Forest est le modèle de scoring le plus performant pour prédire la On peut conclure que le modèle de Random Forest est le modèle de scoring le plus performant pour prédire la probabilité de décéder de suite d'une insuffisante cardiaque  au regard de l'accuracy : `r max(table_scoring$accuracy)`. 
+Par ailleurs, ce dernier a été utilisé pour identifier les variables qui influencent le plus ce phénomène. Il résulte de cette analyse que le temps après l'insuffisance cardiaque (exprimée en nombre de jour),  le taux de créatinine, la fraction d'éjection et l'âge sont les facteurs les plus déterminants. 
