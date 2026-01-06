@@ -1,11 +1,11 @@
 Heart Failure Prediction est un projet académique qui porte sur le développement d'une méthode de scoring utilisée pour prédire le décès d'un patient souffrant d'insuffisance cardiaque. 
 Les modèles de scoring proposés sont issus de la thérorie d'apprentissage statistique. On retrouve des :
 
-**Modèles d'apprentissage automatique non supervisé :** 
+. **Modèles d'apprentissage automatique non supervisé :** 
   - Classification Ascendante Hierarchique
   - K-Means
   - L'algorithme du plus proche voisin (KNN)
-**Modèles d'apprentissage automatique supervisé :**
+. **Modèles d'apprentissage automatique supervisé :**
   - Arbre de décision
   - Analyse Discriminante
   - Random Forest
@@ -25,4 +25,5 @@ Correlation Matrix
 Random Forest Error plot
 =======================
 <img width="770" height="475" alt="3" src="https://github.com/user-attachments/assets/9ae9cfbb-95d6-4b36-ad02-81b1643cd26f" />
+
 
