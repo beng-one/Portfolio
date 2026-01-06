@@ -1,4 +1,4 @@
-Heart Failure Prediction est un projet académique qui porte sur le développement d'une méthode de scoring utilisée pour prédire le décès d'un patient souffrant d'insuffisance cardiaque. 
+Heart Failure Prediction est un projet académique réalisé avec @Jean-Luc AIVOR qui porte sur le développement d'une méthode de scoring utilisée pour prédire le décès d'un patient souffrant d'insuffisance cardiaque. 
 Les modèles de scoring proposés sont issus de la thérorie d'apprentissage statistique. On retrouve des :
 
  **1. Modèles d'apprentissage automatique non supervisé :** 
@@ -25,6 +25,7 @@ Correlation Matrix
 Random Forest Error plot
 =======================
 <img width="770" height="475" alt="3" src="https://github.com/user-attachments/assets/9ae9cfbb-95d6-4b36-ad02-81b1643cd26f" />
+
 
 
 
